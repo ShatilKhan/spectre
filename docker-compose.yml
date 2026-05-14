@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   backend:
     build:
@@ -46,15 +44,11 @@ services:
       - ./backend/otel-config.yaml:/etc/otel-config.yaml
     ports:
       - "5090:4317"
-    profiles:
-      - telemetry
 
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
       - "5091:16686"
-    profiles:
-      - telemetry
 
 volumes:
   ollama_models:
