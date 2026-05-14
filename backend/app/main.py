@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from scalar_fastapi import get_scalar_api_reference
 
+from app.extraction.llm_extractor import extract_fields
 from app.ocr.pipeline import process_document
 
 
@@ -165,5 +166,97 @@ async def upload_pdf(
 
     finally:
         # Clean up uploaded file
+        if upload_path.exists():
+            upload_path.unlink()
+
+
+# ─── Extract ────────────────────────────────────────
+
+
+@app.post(
+    "/extract",
+    tags=["Documents"],
+    summary="Upload, OCR, and extract structured fields from a PDF",
+    description=(
+        "Upload a legal document (PDF only). The system will:\n"
+        "1. OCR all pages using PaddleOCR\n"
+        "2. Classify the document type\n"
+        "3. Run LLM-based structured extraction using the matching schema\n"
+        "4. Return extracted fields with confidence scores\n\n"
+        "Supports: NDAs, MSAs, engagement letters, fee proposals, "
+        "and generic legal documents."
+    ),
+)
+async def extract_pdf(
+    file: UploadFile = File(
+        ...,
+        description="PDF file of a legal document.",
+    ),
+):
+    """Upload a PDF and extract structured fields.
+
+    Chains OCR → document classification → LLM extraction using the
+    schema that matches the detected document type.
+
+    **Request example:**
+    Upload a file using multipart/form-data with field name `file`.
+
+    **Response example:**
+    ```json
+    {
+      "file_name": "nda.pdf",
+      "doc_type": "nda",
+      "ocr_confidence": 0.92,
+      "extracted": {
+        "parties": ["Acme Corp", "Beta Inc"],
+        "effective_date": "2024-01-15",
+        "governing_law": "New York",
+        "is_mutual": true,
+        "summary": "Mutual NDA governing confidential information..."
+      }
+    }
+    ```
+    """
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are accepted",
+        )
+
+    # Save uploaded file
+    upload_path = Path("/app/uploads") / file.filename
+    content = await file.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+    upload_path.write_bytes(content)
+
+    try:
+        # Step 1: OCR + classify
+        ocr_result = process_document(upload_path)
+
+        # Step 2: LLM extraction with matching schema
+        extracted = extract_fields(
+            raw_text=ocr_result.full_text,
+            doc_type=ocr_result.doc_type,
+        )
+
+        return {
+            "file_name": ocr_result.file_name,
+            "doc_type": ocr_result.doc_type,
+            "ocr_confidence": round(ocr_result.confidence, 3),
+            "extracted": extracted,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Extraction failed: {str(e)}",
+        )
+
+    finally:
         if upload_path.exists():
             upload_path.unlink()
