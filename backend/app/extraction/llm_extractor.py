@@ -1,23 +1,33 @@
 """LLM-based structured extraction from OCR text.
 
 Uses llama-cpp-python with Granite 4.1 for local inference,
-or Groq API as an optional cloud fallback.
+or Groq API as an optional cloud fallback. JSON schema is enforced
+at the token level via GBNF grammars when using local mode.
 """
 
 import json
 import os
-from typing import Any
+from typing import Any, Optional
+from pydantic import BaseModel
 
-from app.models import ProposalExtraction
+from app.extraction.schemas import get_schema
+from app.feedback.reinforcement import format_examples_for_prompt, get_few_shot_examples
 
 LLM_MODE = os.getenv("LLM_MODE", "local")
 _llm_instance = None
 
-SYSTEM_PROMPT = """You are a legal document extraction assistant.
-Extract structured information from the provided legal document text.
-Return only valid JSON matching the requested schema.
-If a field cannot be determined, use null.
-Do not invent or fabricate information not present in the text."""
+BASE_SYSTEM_PROMPT = """You are a legal document extraction assistant. Extract structured information from the provided legal document text.
+
+Rules:
+1. Return only valid JSON matching the requested schema.
+2. If a field cannot be determined from the text, use null.
+3. Do not invent or fabricate information not present in the text.
+4. For date fields, use ISO 8601 format (YYYY-MM-DD) when possible.
+5. For list fields, include all items mentioned in the text.
+6. Extract text verbatim where possible rather than paraphrasing.
+
+Document type: {doc_type}
+"""
 
 
 def get_llm():
@@ -37,7 +47,6 @@ def get_llm():
             verbose=False,
         )
     elif LLM_MODE == "groq":
-        # Use OpenAI-compatible client for Groq
         from openai import OpenAI
 
         _llm_instance = OpenAI(
@@ -47,32 +56,47 @@ def get_llm():
     return _llm_instance
 
 
-def extract_fields(raw_text: str) -> dict[str, Any]:
+def extract_fields(
+    raw_text: str,
+    doc_type: str = "legal_generic",
+    use_few_shot: bool = True,
+) -> dict[str, Any]:
     """Extract structured fields from OCR text using the LLM.
 
     Args:
         raw_text: OCR-extracted text from the document.
+        doc_type: Classified document type for schema selection.
+        use_few_shot: Whether to include correction examples in the prompt.
 
     Returns:
-        Dictionary of extracted fields with confidence metadata.
+        Dictionary of extracted fields matching the schema for doc_type.
     """
     llm = get_llm()
+    schema = get_schema(doc_type)
+    schema_dict = schema.model_json_schema()
 
-    extraction_schema = ProposalExtraction.model_json_schema()
+    # Build system prompt with doc type and optional corrections
+    system_prompt = BASE_SYSTEM_PROMPT.format(doc_type=doc_type)
+
+    if use_few_shot:
+        examples = get_few_shot_examples(n=3)
+        correction_text = format_examples_for_prompt(examples)
+        if correction_text:
+            system_prompt += correction_text
+
+    user_prompt = f"Extract fields from this {doc_type}:\n\n{raw_text}"
 
     if LLM_MODE == "local":
+        from llama_cpp import LlamaGrammar
+
+        grammar = LlamaGrammar.from_json_schema(schema_dict)
+
         response = llm.create_chat_completion(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Extract fields from this legal document:\n\n{raw_text}",
-                },
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
-            response_format={
-                "type": "json_object",
-                "schema": extraction_schema,
-            },
+            grammar=grammar,
             temperature=0.0,
             max_tokens=2000,
         )
@@ -81,11 +105,8 @@ def extract_fields(raw_text: str) -> dict[str, Any]:
         response = llm.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Extract fields from this legal document:\n\n{raw_text}",
-                },
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.0,
@@ -93,6 +114,7 @@ def extract_fields(raw_text: str) -> dict[str, Any]:
         content = response.choices[0].message.content
 
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
+        return parsed
     except json.JSONDecodeError:
-        return {"raw_text": raw_text, "error": "Failed to parse LLM output"}
+        return {"error": "Failed to parse LLM output", "raw_snippet": content[:500]}
