@@ -1,6 +1,13 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS build
 
-# Install system deps for PaddleOCR + Tesseract
+# Install build dependencies for compiling llama-cpp-python
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install runtime system deps for PaddleOCR + Tesseract
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -14,7 +21,7 @@ RUN useradd -m -u 1000 user
 USER user
 WORKDIR /home/user/app
 
-# Install Python deps
+# Install Python deps (llama-cpp-python compiles from source here)
 COPY --chown=user pyproject.toml .
 RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache-dir -e "."
 
