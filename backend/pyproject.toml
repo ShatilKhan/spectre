@@ -1,0 +1,37 @@
+[project]
+name = "spectre-backend"
+version = "0.1.0"
+description = "Legal document extraction and draft generation backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "chromadb>=0.5.0",
+    "paddlepaddle>=3.0.0",
+    "paddleocr>=2.8.0",
+    "llama-cpp-python>=0.3.0",
+    "opentelemetry-api>=1.25.0",
+    "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-instrumentation-fastapi>=0.46b0",
+    "python-multipart>=0.0.9",
+    "pdf2image>=1.17.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "tqdm>=4.66.0",
+    "rapidfuzz>=3.0.0",
+    "huggingface-hub>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
