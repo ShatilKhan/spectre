@@ -28,8 +28,8 @@ app = FastAPI(
     summary="Upload PDFs of legal documents and extract structured fields",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/swagger",  # Swagger UI at /swagger
-    redoc_url="/redoc",  # ReDoc at /redoc
+    docs_url=None,  # using Scalar instead
+    redoc_url=None,  # using Scalar instead
 )
 
 app.add_middleware(
@@ -46,14 +46,19 @@ app.add_middleware(
 
 @app.get("/docs", include_in_schema=False)
 async def scalar_docs():
-    """Scalar API reference — replaces Swagger UI.
-
-    Clean, modern API documentation with built-in request testing.
-    """
+    """Scalar API reference — clean, modern API documentation
+    with built-in request testing (Elysia.js theme)."""
     import json
+    from scalar_fastapi import Layout
+
     return get_scalar_api_reference(
         content=json.dumps(app.openapi()),
         title="Spectre API",
+        layout=Layout.MODERN,
+        dark_mode=False,
+        hide_download_button=True,
+        hide_test_request_button=False,
+        overrides={"theme": "elysiajs"},
     )
 
 
