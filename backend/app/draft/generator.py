@@ -1,12 +1,12 @@
-"""Draft generation with grounded evidence citations using Granite 4.1."""
+"""Draft generation with grounded evidence citations."""
 
 import json
 import os
 from typing import Any
 
-from llama_cpp import Llama
+from app.extraction.llm_extractor import get_llm, _using_gpu
 
-from app.extraction.llm_extractor import get_llm
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "")
 
 DRAFT_TEMPLATE = """You are a legal document reviewer. Generate an internal review memo
 based on the extracted data and source passages provided below.
@@ -37,15 +37,7 @@ def generate_draft(
     extracted_data: dict[str, Any],
     source_passages: list[dict[str, Any]],
 ) -> str:
-    """Generate a grounded draft memo from extracted data and source passages.
-
-    Args:
-        extracted_data: Structured fields extracted from the document.
-        source_passages: Relevant passages retrieved from the vector store.
-
-    Returns:
-        Generated draft text with inline citations.
-    """
+    """Generate a grounded draft memo."""
     llm = get_llm()
 
     passages_text = "\n\n".join(
@@ -60,13 +52,24 @@ def generate_draft(
         source_passages=passages_text,
     )
 
-    response = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": "You are a legal memo generator."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,
-        max_tokens=3000,
-    )
-
-    return response["choices"][0]["message"]["content"] or ""
+    if _using_gpu:
+        response = llm.chat.completions.create(
+            model="granite4.1:3b",
+            messages=[
+                {"role": "system", "content": "You are a legal memo generator."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=3000,
+        )
+        return response.choices[0].message.content or ""
+    else:
+        response = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": "You are a legal memo generator."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=3000,
+        )
+        return response["choices"][0]["message"]["content"] or ""

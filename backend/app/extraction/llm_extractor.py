@@ -1,16 +1,20 @@
-"""LLM-based structured extraction using Granite 4.1 via llama-cpp-python."""
+"""LLM-based structured extraction with auto GPU/CPU detection.
+
+Tries Ollama (GPU) first. If unavailable, falls back to llama-cpp-python (CPU).
+Zero config — works out of the box with `docker compose up --build`.
+"""
 
 import json
 import os
 from typing import Any
 
-from llama_cpp import Llama, LlamaGrammar
-
 from app.extraction.schemas import get_schema
 from app.feedback.reinforcement import format_examples_for_prompt, get_few_shot_examples
 
-MODEL_PATH = os.getenv("MODEL_PATH", "/models/granite-4.1-3b-Q4_K_M.gguf")
-_llm = None
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "")
+MODEL_PATH = os.getenv("MODEL_PATH", "/models/ibm-granite_granite-4.1-3b-Q4_K_M.gguf")
+_llm_instance = None
+_using_gpu = None
 
 BASE_SYSTEM_PROMPT = """You are a legal document extraction assistant. Extract structured information from the provided legal document text.
 
@@ -26,22 +30,41 @@ Document type: {doc_type}
 """
 
 
-def get_llm() -> Llama:
-    """Get or create the shared Llama instance (loaded once, reused)."""
-    global _llm
-    if _llm is None:
-        if not os.path.exists(MODEL_PATH):
-            raise FileNotFoundError(
-                f"Model not found at {MODEL_PATH}. "
-                "The model will auto-download on container start."
-            )
-        _llm = Llama(
-            model_path=MODEL_PATH,
-            n_ctx=8192,
-            n_threads=4,
-            verbose=False,
+def get_llm():
+    """Auto-detect: use Ollama (GPU) if available, CPU fallback otherwise."""
+    global _llm_instance, _using_gpu
+    if _llm_instance is not None:
+        return _llm_instance
+
+    # Try Ollama first (GPU, fast)
+    if OLLAMA_BASE_URL:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=f"{OLLAMA_BASE_URL}/v1", api_key="ollama")
+            client.models.list()  # health check — raises if unreachable
+            print("LLM: using Ollama (GPU)")
+            _llm_instance = client
+            _using_gpu = True
+            return _llm_instance
+        except Exception:
+            print("LLM: Ollama not available, falling back to CPU")
+
+    # CPU fallback via llama-cpp-python
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(
+            f"Model not found at {MODEL_PATH}. "
+            "The model will auto-download on container start."
         )
-    return _llm
+    from llama_cpp import Llama
+    print(f"LLM: loading {MODEL_PATH} on CPU...")
+    _llm_instance = Llama(
+        model_path=MODEL_PATH,
+        n_ctx=8192,
+        n_threads=4,
+        verbose=False,
+    )
+    _using_gpu = False
+    return _llm_instance
 
 
 def extract_fields(
@@ -49,26 +72,15 @@ def extract_fields(
     doc_type: str = "legal_generic",
     use_few_shot: bool = True,
 ) -> dict[str, Any]:
-    """Extract structured fields from OCR text using Granite 4.1.
+    """Extract structured fields using auto-detected LLM backend.
 
-    Uses LlamaGrammar.from_json_schema() for token-level JSON enforcement
-    — the model literally cannot output invalid JSON.
-
-    Args:
-        raw_text: OCR-extracted text from the document.
-        doc_type: Classified document type for schema selection.
-        use_few_shot: Whether to include correction examples in the prompt.
-
-    Returns:
-        Dictionary of extracted fields matching the schema for doc_type.
+    Ollama (GPU) → fast. llama-cpp-python (CPU) → always works.
     """
     llm = get_llm()
     schema = get_schema(doc_type)
     schema_dict = schema.model_json_schema()
-    grammar = LlamaGrammar.from_json_schema(json.dumps(schema_dict))
 
     system_prompt = BASE_SYSTEM_PROMPT.format(doc_type=doc_type)
-
     if use_few_shot:
         examples = get_few_shot_examples(n=3)
         correction_text = format_examples_for_prompt(examples)
@@ -77,20 +89,36 @@ def extract_fields(
 
     user_prompt = f"Extract fields from this {doc_type}:\n\n{raw_text}"
 
-    response = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        grammar=grammar,
-        temperature=0.0,
-        max_tokens=2000,
-    )
+    if _using_gpu:
+        # Ollama / OpenAI-compatible API
+        response = llm.chat.completions.create(
+            model="granite4.1:3b",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0,
+            max_tokens=2000,
+        )
+        content = response.choices[0].message.content
+    else:
+        # llama-cpp-python with grammar enforcement
+        from llama_cpp import LlamaGrammar
+        grammar = LlamaGrammar.from_json_schema(json.dumps(schema_dict))
+        response = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            grammar=grammar,
+            temperature=0.0,
+            max_tokens=2000,
+        )
+        content = response["choices"][0]["message"]["content"]
 
-    content = response["choices"][0]["message"]["content"]
     if not content:
         return {"error": "Empty response from LLM"}
-
     try:
         return json.loads(content)
     except json.JSONDecodeError:
