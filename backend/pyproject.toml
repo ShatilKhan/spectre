@@ -4,34 +4,33 @@ version = "0.1.0"
 description = "Legal document extraction and draft generation backend"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.136.0",
-    "uvicorn>=0.47.0",
-    "pydantic>=2.13.0",
-    "sqlalchemy>=2.0.0",
-    "aiosqlite>=0.22.0",
-    "chromadb>=1.5.0",
-    "paddlepaddle>=3.3.0",
-    "paddleocr>=3.5.0",
-    "llama-cpp-python>=0.3.0",
-    "opentelemetry-api>=1.41.0",
-    "opentelemetry-sdk>=1.41.0",
-    "opentelemetry-instrumentation-fastapi>=0.62b0",
-    "python-multipart>=0.0.28",
-    "pdf2image>=1.17.0",
-    "Pillow>=12.0.0",
-    "numpy>=2.4.0",
-    "pandas>=3.0.0",
-    "tqdm>=4.67.0",
-    "rapidfuzz>=3.14.0",
-    "huggingface-hub>=1.14.0",
-    "scalar-fastapi>=1.8.0",
+    "fastapi==0.136.1",
+    "uvicorn==0.47.0",
+    "pydantic==2.13.4",
+    "sqlalchemy==2.0.49",
+    "aiosqlite==0.22.1",
+    "chromadb==1.5.9",
+    "paddlepaddle==3.2.2",
+    "paddleocr==3.5.0",
+    "llama-cpp-python==0.3.23",
+    "opentelemetry-api==1.41.1",
+    "opentelemetry-sdk==1.41.1",
+    "opentelemetry-instrumentation-fastapi==0.62b1",
+    "python-multipart==0.0.28",
+    "pdf2image==1.17.0",
+    "Pillow==12.2.0",
+    "pandas==3.0.3",
+    "tqdm==4.67.3",
+    "rapidfuzz==3.14.5",
+    "huggingface-hub==1.14.0",
+    "scalar-fastapi==1.8.2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    "httpx>=0.28.0",
+    "httpx==0.28.1",
 ]
 
 [tool.fastapi]

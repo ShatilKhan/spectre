@@ -1,12 +1,7 @@
 """PaddleOCR engine with thread pool for multi-page PDF processing.
 
-Usage:
-    from app.ocr.engine import process_pdf
-
-    pages = process_pdf("contract.pdf")
-    for page in pages:
-        print(page.text)
-        print(page.confidence)
+Uses PaddleOCR 3.5.0's predict() API for native PDF support.
+Thread pool runs page-level predictions in parallel.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -28,54 +23,25 @@ def get_ocr():
         from paddleocr import PaddleOCR
 
         _ocr_instance = PaddleOCR(
-            use_angle_cls=True,
             lang="en",
-            use_gpu=False,
-            show_log=False,
-            det_db_thresh=0.3,
-            det_db_box_thresh=0.5,
+            text_det_thresh=0.3,
+            text_det_box_thresh=0.5,
         )
     return _ocr_instance
 
 
-def ocr_page(page_image: np.ndarray) -> tuple[str, float]:
-    """OCR a single page image. Thread-safe (PaddlePaddle releases GIL).
-
-    Args:
-        page_image: RGB numpy array of the page.
-
-    Returns:
-        Tuple of (extracted_text, average_confidence).
-    """
-    ocr = get_ocr()
-    result = ocr.ocr(page_image)
-    lines: list[str] = []
-    confidences: list[float] = []
-    if result and result[0]:
-        for line in result[0]:
-            text, confidence = line[1]
-            if confidence > 0.3:
-                lines.append(text)
-                confidences.append(confidence)
-    text = "\n".join(lines)
-    avg_conf = float(np.mean(confidences)) if confidences else 0.0
-    return text, avg_conf
-
-
-def pdf_to_images(pdf_path: str | Path, dpi: int = 200) -> list[np.ndarray]:
-    """Convert PDF pages to numpy arrays for OCR.
+def ocr_predict_single(pdf_path: str) -> list[dict]:
+    """Run PaddleOCR predict() on a PDF, returns per-page results.
 
     Args:
         pdf_path: Path to the PDF file.
-        dpi: Resolution for rendering (lower = faster, higher = better OCR).
 
     Returns:
-        List of RGB numpy arrays, one per page.
+        List of dicts, one per page, with keys:
+            page_index, rec_texts, rec_scores, dt_polys, etc.
     """
-    from pdf2image import convert_from_path
-
-    pil_images = convert_from_path(str(pdf_path), dpi=dpi)
-    return [np.array(img) for img in pil_images]
+    ocr = get_ocr()
+    return list(ocr.predict(pdf_path))
 
 
 class PageResult:
@@ -125,33 +91,32 @@ def process_pdf(
     max_workers: Optional[int] = None,
     dpi: int = 200,
 ) -> DocumentResult:
-    """OCR a PDF document end-to-end with multi-page parallelism.
+    """OCR a PDF document using PaddleOCR 3.5.0's native PDF support.
 
     Args:
         pdf_path: Path to the PDF file.
-        max_workers: Thread count per page. Defaults to min(CPU cores, 4).
-        dpi: Rendering resolution for page images.
+        max_workers: Not used for PDFs (PaddleOCR handles natively).
+        dpi: Not used for PDFs (PaddleOCR uses native page rendering).
 
     Returns:
         DocumentResult with per-page text and confidence scores.
     """
-    if max_workers is None:
-        max_workers = min(os.cpu_count() or 4, 4)
+    raw_results = ocr_predict_single(str(pdf_path))
 
-    # Step 1: render PDF pages to images
-    page_images = pdf_to_images(pdf_path, dpi=dpi)
-    if not page_images:
-        return DocumentResult([])
+    pages = []
+    for raw in raw_results:
+        page_idx = raw.get("page_index", 0)
+        texts: list[str] = raw.get("rec_texts", []) or []
+        scores: list[float] = raw.get("rec_scores", []) or []
 
-    # Step 2: OCR all pages in parallel
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        results = list(pool.map(ocr_page, page_images))
+        page_text = "\n".join(texts)
+        page_conf = float(np.mean(scores)) if scores else 0.0
 
-    # Step 3: build result objects
-    pages = [
-        PageResult(page_number=i + 1, text=text, confidence=conf)
-        for i, (text, conf) in enumerate(results)
-    ]
+        pages.append(PageResult(
+            page_number=page_idx + 1,
+            text=page_text,
+            confidence=page_conf,
+        ))
 
     return DocumentResult(pages)
 
@@ -160,7 +125,7 @@ def process_page_images(
     page_images: list[np.ndarray],
     max_workers: Optional[int] = None,
 ) -> list[str]:
-    """OCR pre-rendered page images (useful when images are already available).
+    """OCR pre-rendered page images (used when images are pre-rendered).
 
     Args:
         page_images: List of RGB numpy arrays, one per page.
@@ -172,7 +137,15 @@ def process_page_images(
     if max_workers is None:
         max_workers = min(os.cpu_count() or 4, 4)
 
+    ocr = get_ocr()
+
+    def ocr_page(img: np.ndarray) -> str:
+        result = list(ocr.predict(img))
+        if result and "rec_texts" in result[0]:
+            return "\n".join(result[0]["rec_texts"] or [])
+        return ""
+
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         results = list(pool.map(ocr_page, page_images))
 
-    return [text for text, conf in results]
+    return results

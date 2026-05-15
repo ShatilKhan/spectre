@@ -1,13 +1,12 @@
-"""Draft generation with grounded evidence citations."""
+"""Draft generation with grounded evidence citations using Granite 4.1."""
 
 import json
 import os
+from typing import Any
 
 from llama_cpp import Llama
-from openai import OpenAI
 
-LLM_MODE = os.getenv("LLM_MODE", "local")
-_llm = None
+from app.extraction.llm_extractor import get_llm
 
 DRAFT_TEMPLATE = """You are a legal document reviewer. Generate an internal review memo
 based on the extracted data and source passages provided below.
@@ -35,8 +34,8 @@ Use inline citations like [Source: page X] after each claim.
 
 
 def generate_draft(
-    extracted_data: dict,
-    source_passages: list[dict],
+    extracted_data: dict[str, Any],
+    source_passages: list[dict[str, Any]],
 ) -> str:
     """Generate a grounded draft memo from extracted data and source passages.
 
@@ -47,6 +46,8 @@ def generate_draft(
     Returns:
         Generated draft text with inline citations.
     """
+    llm = get_llm()
+
     passages_text = "\n\n".join(
         [
             f"[Page {p.get('metadata', {}).get('page', '?')}] {p['document']}"
@@ -59,31 +60,13 @@ def generate_draft(
         source_passages=passages_text,
     )
 
-    if LLM_MODE == "local":
-        from app.extraction.llm_extractor import get_llm
+    response = llm.create_chat_completion(
+        messages=[
+            {"role": "system", "content": "You are a legal memo generator."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=3000,
+    )
 
-        llm = get_llm()
-        response = llm.create_chat_completion(
-            messages=[
-                {"role": "system", "content": "You are a legal memo generator."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=3000,
-        )
-        return response["choices"][0]["message"]["content"]
-    else:
-        client = OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=os.getenv("GROQ_API_KEY", ""),
-        )
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are a legal memo generator."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=3000,
-        )
-        return response.choices[0].message.content
+    return response["choices"][0]["message"]["content"] or ""

@@ -1,12 +1,12 @@
 """Spectre backend — FastAPI application."""
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from scalar_fastapi import get_scalar_api_reference
 
+from app.config import settings
 from app.extraction.llm_extractor import extract_fields
 from app.ocr.pipeline import process_document
 
@@ -14,10 +14,8 @@ from app.ocr.pipeline import process_document
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle — startup/shutdown hooks."""
-    # Startup: create upload dir
-    Path("/app/uploads").mkdir(parents=True, exist_ok=True)
+    # Upload dir is created by config.py on import
     yield
-    # Shutdown: cleanup (if needed)
 
 
 app = FastAPI(
@@ -51,16 +49,11 @@ async def scalar_docs():
 
     Clean, modern API documentation with built-in request testing.
     """
+    import json
     return get_scalar_api_reference(
-        openapi_url=app.openapi_url,
+        content=json.dumps(app.openapi()),
         title="Spectre API",
     )
-
-
-@app.get("/openapi.json", include_in_schema=False)
-async def openapi_json():
-    """Expose OpenAPI spec for Scalar to consume."""
-    return app.openapi()
 
 
 # ─── Health ──────────────────────────────────────────
@@ -143,7 +136,7 @@ async def upload_pdf(
         )
 
     # Save uploaded file
-    upload_path = Path("/app/uploads") / file.filename
+    upload_path = settings.upload_dir / file.filename
     content = await file.read()
     if not content:
         raise HTTPException(
@@ -225,7 +218,7 @@ async def extract_pdf(
         )
 
     # Save uploaded file
-    upload_path = Path("/app/uploads") / file.filename
+    upload_path = settings.upload_dir / file.filename
     content = await file.read()
     if not content:
         raise HTTPException(

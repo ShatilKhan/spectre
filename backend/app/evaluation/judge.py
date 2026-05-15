@@ -1,12 +1,13 @@
-"""LLM-as-judge evaluation using Granite 4.1.
+"""LLM-as-judge evaluation using Granite 4.1 via llama-cpp-python.
 
 Evaluates extraction quality, context relevance, faithfulness,
 and hallucination rate using the LLM itself as the judge.
 """
 
 import json
-import os
 from typing import Any
+
+from app.extraction.llm_extractor import get_llm
 
 JUDGE_PROMPT = """You are an evaluation judge for a legal document extraction system.
 Evaluate the quality of the extraction against the ground truth.
@@ -41,8 +42,6 @@ def evaluate_extraction(
     Returns:
         Dict of evaluation metrics.
     """
-    from app.extraction.llm_extractor import get_llm
-
     llm = get_llm()
     prompt = JUDGE_PROMPT.format(
         extracted=json.dumps(extracted, indent=2),
@@ -60,6 +59,15 @@ def evaluate_extraction(
     )
 
     content = response["choices"][0]["message"]["content"]
+    if not content:
+        return {
+            "context_relevance": 0.0,
+            "answer_faithfulness": 0.0,
+            "answer_relevance": 0.0,
+            "hallucination_rate": 1.0,
+            "error": "Empty response from LLM judge",
+        }
+
     try:
         return json.loads(content)
     except json.JSONDecodeError:

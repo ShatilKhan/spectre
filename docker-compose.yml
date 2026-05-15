@@ -7,18 +7,13 @@ services:
       - "5060:8000"
     volumes:
       - ./models:/models
-      - ./data:/app/data
-      - ./datasets:/app/datasets
+      - ./data:/home/user/app/data
+      - ./sample_docs:/home/user/app/sample_docs
     environment:
-      - LLM_MODE=${LLM_MODE:-local}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - MODEL_PATH=/models/granite-4.1-3b-Q4_K_M.gguf
-      - DATABASE_URL=sqlite:///app/data/spectre.db
-      - CHROMA_PERSIST_DIR=/app/data/chroma
-      - OTLP_ENDPOINT=http://otel-collector:4317
-    depends_on:
-      otel-collector:
-        condition: service_started
+      - LLM_MODE=local
+      - MODEL_PATH=/models/ibm-granite_granite-4.1-3b-Q4_K_M.gguf
+      - DATABASE_URL=sqlite:////home/user/app/data/spectre.db
+      - CHROMA_PERSIST_DIR=/home/user/app/data/chroma
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -36,19 +31,3 @@ services:
         condition: service_started
     environment:
       - API_BASE_URL=http://backend:8000
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    command: ["--config=/etc/otel-config.yaml"]
-    volumes:
-      - ./backend/otel-config.yaml:/etc/otel-config.yaml
-    ports:
-      - "5090:4317"
-
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    ports:
-      - "5091:16686"
-
-volumes:
-  ollama_models:
