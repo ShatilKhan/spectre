@@ -1,5 +1,6 @@
 """Spectre backend — FastAPI application."""
 
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
@@ -27,8 +28,8 @@ app = FastAPI(
     summary="Upload PDFs of legal documents and extract structured fields",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url=None,  # disabled — using Scalar instead
-    redoc_url=None,  # disabled — using Scalar instead
+    docs_url="/swagger",  # Swagger UI at /swagger
+    redoc_url="/redoc",  # ReDoc at /redoc
 )
 
 app.add_middleware(
@@ -253,3 +254,67 @@ async def extract_pdf(
     finally:
         if upload_path.exists():
             upload_path.unlink()
+
+
+# ─── Draft (stub) ───────────────────────────────────────
+
+
+@app.post(
+    "/draft",
+    tags=["Draft"],
+    summary="Generate a grounded draft memo",
+    description="Generates a legal memo grounded in extracted data and source passages. (Stub — full implementation pending.)",
+)
+async def generate_draft(payload: dict):
+    """Generate a grounded draft memo. Stub — returns placeholder."""
+    return {
+        "draft": (
+            "# Internal Review Memo\n\n"
+            "**To:** Reviewing Attorney\n"
+            "**From:** Spectre AI\n"
+            f"**Document Type:** {payload.get('extracted_data', {}).get('document_type', 'Unknown')}\n\n"
+            "## Summary\n"
+            "This is a stub draft. Full draft generation will be implemented in a future update.\n\n"
+            "## Extracted Data\n"
+            f"{json.dumps(payload.get('extracted_data', {}), indent=2)}\n\n"
+            "## Evidence\n"
+            "The above fields were extracted from the uploaded document. "
+            "Inline citations will be added once the retrieval layer is connected."
+        )
+    }
+
+
+# ─── Feedback (stub) ────────────────────────────────────
+
+
+@app.post(
+    "/feedback",
+    tags=["Feedback"],
+    summary="Submit operator edits for improvement loop",
+    description="Accepts corrections from the operator review sheet. (Stub — full implementation pending.)",
+)
+async def submit_feedback(payload: dict):
+    """Accept operator corrections. Stub — logs and acknowledges."""
+    changed = payload.get("changed_fields", [])
+    print(f"Feedback received: {len(changed)} fields corrected: {changed}")
+    return {"status": "accepted", "corrections_count": len(changed)}
+
+
+# ─── Evaluate (stub) ────────────────────────────────────
+
+
+@app.post(
+    "/evaluate",
+    tags=["Evaluation"],
+    summary="Run LLM-as-judge evaluation metrics",
+    description="Evaluates extraction quality against ground truth. (Stub — full implementation pending.)",
+)
+async def evaluate(payload: dict):
+    """Run evaluation metrics. Stub — returns placeholder scores."""
+    return {
+        "context_relevance": 0.85,
+        "answer_faithfulness": 0.90,
+        "answer_relevance": 0.88,
+        "hallucination_rate": 0.02,
+        "note": "Stub scores — connect evaluation harness for production metrics.",
+    }
