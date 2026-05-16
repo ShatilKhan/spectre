@@ -10,6 +10,8 @@ from scalar_fastapi import get_scalar_api_reference
 from app.config import settings
 from app.extraction.llm_extractor import extract_fields
 from app.ocr.pipeline import process_document
+from app.retrieval.chroma_store import retrieve_for_draft
+from app.draft.generator import generate_draft, generate_draft_stream
 
 
 @asynccontextmanager
@@ -261,32 +263,141 @@ async def extract_pdf(
             upload_path.unlink()
 
 
-# ─── Draft (stub) ───────────────────────────────────────
+# ─── Draft ───────────────────────────────────────────────
 
 
 @app.post(
     "/draft",
     tags=["Draft"],
     summary="Generate a grounded draft memo",
-    description="Generates a legal memo grounded in extracted data and source passages. (Stub — full implementation pending.)",
+    description=(
+        "Generates a legal memo grounded in extracted data and source passages. "
+        "The system retrieves relevant chunks from the vector store and generates "
+        "a memo with inline citations to the source material."
+    ),
 )
-async def generate_draft(payload: dict):
-    """Generate a grounded draft memo. Stub — returns placeholder."""
-    return {
-        "draft": (
-            "# Internal Review Memo\n\n"
-            "**To:** Reviewing Attorney\n"
-            "**From:** Spectre AI\n"
-            f"**Document Type:** {payload.get('extracted_data', {}).get('document_type', 'Unknown')}\n\n"
-            "## Summary\n"
-            "This is a stub draft. Full draft generation will be implemented in a future update.\n\n"
-            "## Extracted Data\n"
-            f"{json.dumps(payload.get('extracted_data', {}), indent=2)}\n\n"
-            "## Evidence\n"
-            "The above fields were extracted from the uploaded document. "
-            "Inline citations will be added once the retrieval layer is connected."
-        )
+async def generate_draft_endpoint(payload: dict):
+    """Generate a grounded draft memo with citations.
+
+    Expects:
+    ```json
+    {
+      "extracted_data": {...},
+      "ocr_text": "full OCR text from the document",
+      "doc_id": "optional-document-id"
     }
+    ```
+
+    Returns a draft with inline [Source: page X] citations.
+    """
+    extracted = payload.get("extracted_data", {})
+    ocr_text = payload.get("ocr_text", "")
+    pages = payload.get("pages") or payload.get("ocr_pages", [])
+    doc_id = payload.get("doc_id")
+
+    if not ocr_text:
+        return {"draft": "No OCR text provided. Upload a document first."}
+
+    passages = retrieve_for_draft(
+        extracted_data=extracted,
+        ocr_text=ocr_text,
+        pages=pages,
+        doc_id=doc_id,
+    )
+    if not passages:
+        return {"draft": "No relevant passages found in the document."}
+    draft = generate_draft(extracted_data=extracted, source_passages=passages)
+    return {"draft": draft, "evidence_count": len(passages)}
+
+
+# ─── Extract SSE Stream ──────────────────────────────────
+
+
+@app.post(
+    "/extract/stream",
+    tags=["Documents"],
+    summary="Upload, OCR, and extract structured fields (SSE stream)",
+)
+async def extract_stream(file: UploadFile = File(...)):
+    """Extract with SSE progress events for each stage."""
+    from fastapi.responses import StreamingResponse
+
+    async def event_stream():
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            yield "event: error\ndata: " + json.dumps({"message": "Only PDF files accepted"}) + "\n\n"
+            return
+
+        content = await file.read()
+        upload_path = settings.upload_dir / file.filename
+        upload_path.write_bytes(content)
+
+        # OCR step
+        yield "event: progress\ndata: " + json.dumps({"step": "ocr", "message": "Running OCR (7-60 sec)...", "pct": 10}) + "\n\n"
+        try:
+            ocr_result = process_document(upload_path)
+        except Exception as e:
+            yield "event: error\ndata: " + json.dumps({"message": f"OCR failed: {str(e)}"}) + "\n\n"
+            upload_path.unlink()
+            return
+
+        yield "event: progress\ndata: " + json.dumps({"step": "ocr_done", "message": "OCR complete", "pct": 50}) + "\n\n"
+        yield "event: ocr_result\ndata: " + json.dumps(ocr_result.to_dict()) + "\n\n"
+
+        # Extraction step
+        yield "event: progress\ndata: " + json.dumps({"step": "extract", "message": "Extracting with Granite 4.1 (30-60 sec)...", "pct": 55}) + "\n\n"
+        try:
+            extracted = extract_fields(raw_text=ocr_result.full_text, doc_type=ocr_result.doc_type)
+        except Exception as e:
+            yield "event: error\ndata: " + json.dumps({"message": f"Extraction failed: {str(e)}"}) + "\n\n"
+            upload_path.unlink()
+            return
+
+        yield "event: progress\ndata: " + json.dumps({"step": "done", "message": "Complete", "pct": 100}) + "\n\n"
+        yield "event: result\ndata: " + json.dumps({
+            "ocr": ocr_result.to_dict(),
+            "extracted": extracted,
+        }) + "\n\n"
+        upload_path.unlink()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ─── Draft SSE Stream ─────────────────────────────────────
+
+
+@app.post(
+    "/draft/stream",
+    tags=["Draft"],
+    summary="Generate a grounded draft memo (SSE stream)",
+)
+async def generate_draft_stream_endpoint(payload: dict):
+    """Generate a grounded draft memo with streaming response."""
+    from fastapi.responses import StreamingResponse
+
+    extracted = payload.get("extracted_data", {})
+    ocr_text = payload.get("ocr_text", "")
+    pages = payload.get("pages") or payload.get("ocr_pages", [])
+    doc_id = payload.get("doc_id")
+
+    if not ocr_text:
+        return {"draft": "No OCR text provided."}
+
+    passages = retrieve_for_draft(
+        extracted_data=extracted,
+        ocr_text=ocr_text,
+        pages=pages,
+        doc_id=doc_id,
+    )
+    if not passages:
+        return {"draft": "No relevant passages found."}
+
+    async def event_stream():
+        yield "event: meta\ndata: " + json.dumps({"evidence_count": len(passages)}) + "\n\n"
+        for chunk in generate_draft_stream(extracted_data=extracted, source_passages=passages):
+            yield "data: " + json.dumps({"chunk": chunk}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ─── Feedback (stub) ────────────────────────────────────

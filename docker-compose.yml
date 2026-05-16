@@ -9,6 +9,7 @@ services:
       - ./models:/models
       - ./data:/home/user/app/data
       - ./sample_docs:/home/user/app/sample_docs
+      - ./paddlex_cache:/home/user/.paddlex
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

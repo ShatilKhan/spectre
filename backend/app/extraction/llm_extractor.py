@@ -16,6 +16,24 @@ MODEL_PATH = os.getenv("MODEL_PATH", "/models/ibm-granite_granite-4.1-3b-Q4_K_M.
 _llm_instance = None
 _using_gpu = None
 
+
+
+def is_using_gpu() -> bool:
+    """Check if GPU (Ollama) is active. Safe to call at any time."""
+    return _using_gpu is True
+
+
+# CPU fallback context management
+MAX_INPUT_TOKENS = 12000  # leave room for system prompt + output within 16K window
+
+
+def truncate_text(text: str, max_words: int = MAX_INPUT_TOKENS) -> str:
+    """Truncate text to fit within context window."""
+    words = text.split()
+    if len(words) > max_words:
+        return " ".join(words[:max_words]) + "\n\n[...]"
+    return text
+
 BASE_SYSTEM_PROMPT = """You are a legal document extraction assistant. Extract structured information from the provided legal document text.
 
 Rules:
@@ -59,7 +77,7 @@ def get_llm():
     print(f"LLM: loading {MODEL_PATH} on CPU...")
     _llm_instance = Llama(
         model_path=MODEL_PATH,
-        n_ctx=8192,
+        n_ctx=16384,
         n_threads=4,
         verbose=False,
     )
@@ -87,10 +105,10 @@ def extract_fields(
         if correction_text:
             system_prompt += correction_text
 
-    user_prompt = f"Extract fields from this {doc_type}:\n\n{raw_text}"
+    user_prompt = f"Extract fields from this {doc_type}:\n\n{truncate_text(raw_text)}"
 
     if _using_gpu:
-        # Ollama / OpenAI-compatible API
+        # Ollama / OpenAI-compatible API (128K context, no truncation needed)
         response = llm.chat.completions.create(
             model="granite4.1:3b",
             messages=[

@@ -20,6 +20,7 @@ RUN uv pip install --system --no-cache \
     --find-links https://abetlen.github.io/llama-cpp-python/whl/cpu/llama-cpp-python/ \
     -e ".[dev]"
 
+
 # Create non-root user and set up app
 RUN useradd -m -u 1000 user
 USER user

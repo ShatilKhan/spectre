@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from app.extraction.llm_extractor import get_llm, _using_gpu
+from app.extraction.llm_extractor import get_llm, is_using_gpu
 
 JUDGE_PROMPT = """You are an evaluation judge for a legal document extraction system.
 Evaluate the quality of the extraction against the ground truth.
@@ -36,7 +36,7 @@ def evaluate_extraction(
         ground_truth=json.dumps(ground_truth, indent=2),
     )
 
-    if _using_gpu:
+    if is_using_gpu():
         response = llm.chat.completions.create(
             model="granite4.1:3b",
             messages=[
