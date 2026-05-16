@@ -249,6 +249,32 @@ See [Deployment](architecture-docs/04-deployment.md) for the environment matrix,
 
 ---
 
+## Project Screenshots
+### Home Page
+
+<img width="1920" height="1080" alt="Screenshot From 2026-05-16 14-30-46" src="https://github.com/user-attachments/assets/cd032c2e-d9e6-435c-8948-8d9891b5c4f2" />
+
+### Document Extraction
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/3335cbd8-6752-4c91-b654-c61a55130454" />
+
+### Draft Generation 
+
+<img width="1920" height="1080" alt="Screenshot From 2026-05-16 14-36-23" src="https://github.com/user-attachments/assets/691a92ef-2f04-4133-988c-fc3b60d1a62c" />
+
+
+### Eval Benchmarks
+
+### API Docs
+
+<img width="1920" height="1080" alt="Screenshot From 2026-05-16 14-34-49" src="https://github.com/user-attachments/assets/51d28b0f-5504-44db-80eb-1f0569a2a030" />
+
+
+### Jaeger Observability
+
+<img width="1920" height="1080" alt="Screenshot From 2026-05-16 14-35-20" src="https://github.com/user-attachments/assets/e0b2e993-0fd2-4ee3-a6be-6b1b89a4e2fe" />
+
+
 ## Docker Build Troubleshooting
 
 | Issue | Root Cause | Fix Applied |
@@ -266,6 +292,3 @@ See [Deployment](architecture-docs/04-deployment.md) for the environment matrix,
 
 ---
 
-## License
-
-Apache 2.0
