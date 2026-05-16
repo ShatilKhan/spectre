@@ -1,29 +1,43 @@
 """OpenTelemetry instrumentation setup.
 
-Initializes tracing for FastAPI, ChromaDB, and custom spans.
-Traces are exported to the OTel collector for visualization in Jaeger.
+Initializes tracing for FastAPI and custom spans.
+Traces are exported to Jaeger via OTLP gRPC.
+
+Usage at module level (after app creation, before routes):
+    setup_tracing()                         # sets up tracer provider
+    FastAPIInstrumentor.instrument_app(app) # patches routes
+
+Both are no-ops if OTEL_EXPORTER_OTLP_ENDPOINT is not set.
 """
 
 import os
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
-def setup_tracing(app, service_name: str = "spectre-backend"):
-    """Configure OpenTelemetry tracing for the FastAPI application.
+def setup_tracing(service_name: str | None = None) -> bool:
+    """Configure the global OpenTelemetry tracer provider.
+
+    Uses the standard OTEL_EXPORTER_OTLP_ENDPOINT env var. If not set,
+    this is a silent no-op — the app runs without tracing.
 
     Args:
-        app: The FastAPI application instance.
-        service_name: Name for this service in traces.
-    """
-    endpoint = os.getenv("OTLP_ENDPOINT", "http://otel-collector:4317")
+        service_name: Override for the service name. Falls back to
+                      OTEL_SERVICE_NAME env var, then 'spectre-backend'.
 
-    resource = Resource.create({"service.name": service_name})
+    Returns:
+        True if tracing was enabled, False if skipped (no endpoint).
+    """
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    if not endpoint:
+        return False
+
+    name = service_name or os.getenv("OTEL_SERVICE_NAME", "spectre-backend")
+    resource = Resource.create({"service.name": name})
     provider = TracerProvider(resource=resource)
 
     exporter = OTLPSpanExporter(endpoint=endpoint)
@@ -31,5 +45,5 @@ def setup_tracing(app, service_name: str = "spectre-backend"):
     provider.add_span_processor(processor)
 
     trace.set_tracer_provider(provider)
-
-    FastAPIInstrumentor.instrument_app(app)
+    print(f"telemetry: tracing enabled -> {endpoint} (service={name})")
+    return True

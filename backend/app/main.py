@@ -16,6 +16,14 @@ from app.evaluation.judge import evaluate_extraction as judge_extraction
 from app.evaluation.metrics import compute_metrics, EvaluationResult
 from app.feedback.edit_capture import store_correction
 
+# ─── OpenTelemetry Tracing ──────────────────────────────
+
+try:
+    from app.telemetry.tracing import setup_tracing as _setup_tracing
+    _setup_tracing()  # sets up global tracer if endpoint configured
+except Exception:
+    pass  # tracing optional
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +52,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Instrument FastAPI for OpenTelemetry (no-op if tracing not configured)
+try:
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    FastAPIInstrumentor.instrument_app(app)
+except Exception:
+    pass
 
 
 # ─── Scalar API Docs ─────────────────────────────────

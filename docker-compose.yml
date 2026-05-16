@@ -19,6 +19,11 @@ services:
       - MODEL_PATH=/models/ibm-granite_granite-4.1-3b-Q4_K_M.gguf
       - DATABASE_URL=sqlite:////home/user/app/data/spectre.db
       - CHROMA_PERSIST_DIR=/home/user/app/data/chroma
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=spectre-backend
+    depends_on:
+      jaeger:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -36,3 +41,14 @@ services:
         condition: service_started
     environment:
       - API_BASE_URL=http://backend:8000
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.63.0
+    ports:
+      - "16686:16686"   # UI — view traces at http://127.0.0.1:16686
+      - "4317:4317"     # OTLP gRPC — receives traces from backend
+      - "4318:4318"     # OTLP HTTP — alternative receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+    restart: unless-stopped
