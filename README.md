@@ -295,3 +295,8 @@ See [Deployment](architecture-docs/04-deployment.md) for the environment matrix,
 
 ---
 
+
+# I Rest My Case
+
+<img width="244" height="250" alt="suits" src="https://github.com/user-attachments/assets/7b815408-95a5-4db5-be34-8626ea0c015c" />
+
