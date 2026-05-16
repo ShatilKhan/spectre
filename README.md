@@ -265,6 +265,9 @@ See [Deployment](architecture-docs/04-deployment.md) for the environment matrix,
 
 ### Eval Benchmarks
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/4eca973f-e83e-409a-992b-a2f2574c9cd5" />
+
+
 ### API Docs
 
 <img width="1920" height="1080" alt="Screenshot From 2026-05-16 14-34-49" src="https://github.com/user-attachments/assets/51d28b0f-5504-44db-80eb-1f0569a2a030" />
