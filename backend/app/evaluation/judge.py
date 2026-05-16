@@ -5,7 +5,7 @@ from typing import Any
 
 from app.extraction.llm_extractor import get_llm, is_using_gpu
 
-JUDGE_PROMPT = """You are an evaluation judge for a legal document extraction system.
+JUDGE_TEMPLATE = """You are an evaluation judge for a legal document extraction system.
 Evaluate the quality of the extraction against the ground truth.
 
 ## Extracted Data
@@ -14,14 +14,14 @@ Evaluate the quality of the extraction against the ground truth.
 ## Ground Truth
 {ground_truth}
 
-Score each metric from 0.0 to 1.0 and return as JSON:
-{
-  "context_relevance": <float>,
-  "answer_faithfulness": <float>,
-  "answer_relevance": <float>,
-  "hallucination_rate": <float>,
-  "explanation": "<brief explanation of scores>"
-}
+Score each metric from 0.0 to 1.0 and return as JSON with these exact keys:
+- context_relevance: how relevant the extracted context is to the document
+- answer_faithfulness: whether the extraction accurately reflects the source
+- answer_relevance: whether the extraction addresses the document content
+- hallucination_rate: what fraction of extracted information is fabricated
+
+Return ONLY valid JSON. Example:
+{{"context_relevance": 0.95, "answer_faithfulness": 0.90, "answer_relevance": 0.85, "hallucination_rate": 0.02, "explanation": "Brief explanation"}}
 """
 
 
@@ -31,9 +31,10 @@ def evaluate_extraction(
 ) -> dict[str, Any]:
     """Evaluate extraction quality using LLM-as-judge."""
     llm = get_llm()
-    prompt = JUDGE_PROMPT.format(
-        extracted=json.dumps(extracted, indent=2),
-        ground_truth=json.dumps(ground_truth, indent=2),
+    prompt = JUDGE_TEMPLATE.replace(
+        "{extracted}", json.dumps(extracted, indent=2)
+    ).replace(
+        "{ground_truth}", json.dumps(ground_truth, indent=2)
     )
 
     if is_using_gpu():

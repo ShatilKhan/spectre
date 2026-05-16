@@ -7,26 +7,31 @@ Thread pool runs page-level predictions in parallel.
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
+import threading
 from typing import Optional
 
 import numpy as np
 
 # Singleton — initialized once, reused across threads
 _ocr_instance = None
+_ocr_lock = threading.Lock()
 
 
 def get_ocr():
-    """Get or create the shared PaddleOCR instance."""
+    """Get or create the shared PaddleOCR instance (thread-safe)."""
     global _ocr_instance
     if _ocr_instance is None:
-        # Deferred import — paddleocr is heavy
-        from paddleocr import PaddleOCR
+        with _ocr_lock:
+            # Double-checked locking
+            if _ocr_instance is None:
+                # Deferred import — paddleocr is heavy
+                from paddleocr import PaddleOCR
 
-        _ocr_instance = PaddleOCR(
-            lang="en",
-            text_det_thresh=0.3,
-            text_det_box_thresh=0.5,
-        )
+                _ocr_instance = PaddleOCR(
+                    lang="en",
+                    text_det_thresh=0.3,
+                    text_det_box_thresh=0.5,
+                )
     return _ocr_instance
 
 

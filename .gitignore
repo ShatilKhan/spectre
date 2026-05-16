@@ -15,6 +15,7 @@ venv/
 # Docker volumes
 data/
 models/*.gguf
+paddlex_cache/
 
 # IDE
 .vscode/

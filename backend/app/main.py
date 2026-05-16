@@ -12,6 +12,8 @@ from app.extraction.llm_extractor import extract_fields
 from app.ocr.pipeline import process_document
 from app.retrieval.chroma_store import retrieve_for_draft
 from app.draft.generator import generate_draft, generate_draft_stream
+from app.evaluation.judge import evaluate_extraction as judge_extraction
+from app.evaluation.metrics import compute_metrics, EvaluationResult
 from app.feedback.edit_capture import store_correction
 
 
@@ -424,21 +426,92 @@ async def submit_feedback(payload: dict):
     }
 
 
-# ─── Evaluate (stub) ────────────────────────────────────
+# ─── Evaluate ────────────────────────────────────────────
 
 
 @app.post(
     "/evaluate",
     tags=["Evaluation"],
     summary="Run LLM-as-judge evaluation metrics",
-    description="Evaluates extraction quality against ground truth. (Stub — full implementation pending.)",
+    description=(
+        "Evaluates extraction quality against ground truth using Granite 4.1 as judge. "
+        "Returns: context_relevance, answer_faithfulness, answer_relevance, hallucination_rate."
+    ),
 )
 async def evaluate(payload: dict):
-    """Run evaluation metrics. Stub — returns placeholder scores."""
-    return {
-        "context_relevance": 0.85,
-        "answer_faithfulness": 0.90,
-        "answer_relevance": 0.88,
-        "hallucination_rate": 0.02,
-        "note": "Stub scores — connect evaluation harness for production metrics.",
-    }
+    """Run LLM-as-judge evaluation on extracted data vs ground truth."""
+    extracted = payload.get("extracted", {})
+    ground_truth = payload.get("ground_truth", {})
+
+    if not extracted:
+        return {"error": "No extracted data provided.", "num_samples": 0}
+
+    # Run LLM-as-judge
+    scores = judge_extraction(extracted=extracted, ground_truth=ground_truth)
+    result = compute_metrics([scores])
+
+    return result.to_dict()
+
+
+# ─── Benchmark ────────────────────────────────────────────
+
+
+@app.post(
+    "/benchmark",
+    tags=["Evaluation"],
+    summary="Run pipeline benchmarks (classifier, OCR, extraction)",
+    description=(
+        "Benchmark pipeline quality in three modes:\n\n"
+
+        "**classifier** — Document classifier accuracy against 13,155 CUAD clauses. "
+        "Reports per-type accuracy and keyword-coverage upper bounds.\n\n"
+
+        "**ocr** (default) — PaddleOCR accuracy on CUAD PDFs. "
+        "Computes CER/WER by comparing OCR output against HuggingFace ground-truth text. "
+        "Note: first call downloads dataset (~200 MB for 10 PDFs).\n\n"
+
+        "**extraction** — Full pipeline (OCR → classify → LLM extract) on CUAD PDFs. "
+        "Measures field-level grounding rate and hallucination rate.\n\n"
+
+        "**all** — Runs all three benchmarks and aggregates."
+    ),
+)
+async def benchmark(payload: dict):
+    """Run pipeline benchmark in the requested mode."""
+    mode = payload.get("mode", "classifier")
+    from app.evaluation.benchmark import (
+        run_classifier_benchmark,
+        run_ocr_benchmark,
+        run_extraction_benchmark,
+        run_all_benchmarks,
+    )
+
+    try:
+        if mode == "classifier":
+            num_samples = payload.get("num_samples", 200)
+            result = run_classifier_benchmark(num_samples=num_samples)
+        elif mode == "ocr":
+            max_docs = payload.get("max_docs", 10)
+            result = run_ocr_benchmark(max_docs=max_docs)
+        elif mode == "extraction":
+            max_docs = payload.get("max_docs", 5)
+            result = run_extraction_benchmark(max_docs=max_docs)
+        elif mode == "all":
+            result = run_all_benchmarks(
+                classifier_samples=payload.get("classifier_samples", 200),
+                ocr_docs=payload.get("ocr_docs", 10),
+                extraction_docs=payload.get("extraction_docs", 5),
+            )
+        else:
+            return {"error": f"Unknown mode: {mode}. Use: classifier, ocr, extraction, or all."}
+
+        if "error" in result:
+            return {
+                "error": result["error"],
+                "hint": "Run: python datasets/download_cuad.py --clauses-only",
+            }
+
+        return result
+
+    except Exception as e:
+        return {"error": f"Benchmark failed: {str(e)}"}
