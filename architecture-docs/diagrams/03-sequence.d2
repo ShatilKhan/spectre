@@ -1,0 +1,47 @@
+direction: right
+
+user: "Operator" {
+  shape: person
+  label.near: bottom-center
+}
+
+ui: "Streamlit UI" {
+  label.near: bottom-center
+}
+
+api: "FastAPI\nBackend" {
+  label.near: bottom-center
+}
+
+ocr: "PaddleOCR" {
+  label.near: bottom-center
+}
+
+llm: "Granite 4.1" {
+  label.near: bottom-center
+}
+
+chroma: "ChromaDB"
+
+user -> ui: "1. Upload PDF"
+ui -> api: "2. POST /extract/stream"
+api -> ocr: "3. process_document()"
+ocr -> api: "4. OCR text + doc type"
+api -> llm: "5. extract_fields()"
+llm -> api: "6. structured JSON"
+api -> ui: "7. SSE: ocr_result + result"
+ui -> user: "8. Display fields"
+
+user -> ui: "9. Review & edit fields"
+ui -> api: "10. POST /feedback"
+api -> llm: "11. Store as few-shot"
+
+user -> ui: "12. Generate draft"
+ui -> api: "13. POST /draft"
+api -> chroma: "14. index_pages()"
+api -> chroma: "15. query()"
+chroma -> api: "16. relevant passages"
+api -> llm: "17. generate_draft()"
+llm -> api: "18. memo text"
+api -> ui: "19. draft response"
+ui -> user: "20. Display memo"

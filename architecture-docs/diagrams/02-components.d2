@@ -1,0 +1,50 @@
+direction: right
+
+pipeline: "Pipeline" {
+  ocr_layer: "OCR Layer" {
+    engine: "PaddleOCR\nengine.py"
+    preprocess: "Image\npreprocess.py"
+    classifier: "Document\nclassifier.py"
+  }
+
+  extraction_layer: "Extraction Layer" {
+    icon: https://cdn.simpleicons.org/python/3776AB
+    label.near: bottom-center
+
+    llm_extractor: "LLM Extractor\nllm_extractor.py"
+    schemas: "Pydantic Schemas\nschemas.py"
+  }
+
+  retrieval_layer: "Retrieval Layer" {
+    chroma_store: "ChromaDB Store\nchroma_store.py"
+  }
+
+  draft_layer: "Draft Layer" {
+    icon: https://cdn.simpleicons.org/markdown/000000
+    label.near: bottom-center
+
+    generator: "Memo Generator\ngenerator.py"
+  }
+
+  feedback_loop: "Feedback Loop" {
+    icon: https://cdn.simpleicons.org/loop/00BFFF
+    label.near: bottom-center
+
+    edit_capture: "Edit Capture\nedit_capture.py"
+    reinforcement: "Few-shot\nreinforcement.py"
+  }
+
+  evaluation: "Evaluation" {
+    icon: https://cdn.simpleicons.org/checkmarx/00BFFF
+    label.near: bottom-center
+
+    judge: "LLM-as-Judge\njudge.py"
+    benchmark: "Benchmark Runner\nbenchmark.py"
+    metrics: "Metrics\nmetrics.py"
+  }
+}
+
+ocr_layer -> extraction_layer: "extracted text +\ndoc type"
+extraction_layer -> retrieval_layer: "structured fields"
+retrieval_layer -> draft_layer: "relevant passages"
+feedback_loop -> extraction_layer: "corrections as\nfew-shot prompts"

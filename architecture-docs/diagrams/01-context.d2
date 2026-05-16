@@ -1,0 +1,53 @@
+direction: right
+
+user: "Operator\n(User)" {
+  shape: person
+  label.near: bottom-center
+}
+
+frontend: "Streamlit UI" {
+  icon: https://cdn.simpleicons.org/streamlit/FF4B4B
+  label.near: bottom-center
+}
+
+backend: "FastAPI\nBackend" {
+  icon: https://cdn.simpleicons.org/fastapi/009688
+  label.near: bottom-center
+}
+
+ollama: "Ollama\n(LLM GPU)" {
+  icon: https://cdn.simpleicons.org/ollama/000000
+  label.near: bottom-center
+}
+
+cpu_backend: "llama-cpp-python\n(LLM CPU)" {
+  icon: https://cdn.simpleicons.org/python/3776AB
+  label.near: bottom-center
+}
+
+chroma: "ChromaDB\n(Vector Store)" {
+  label.near: bottom-center
+}
+
+jaeger: "Jaeger\n(Tracing)" {
+  icon: https://cdn.simpleicons.org/jaeger/00BFFF
+  label.near: bottom-center
+}
+
+cuad: "CUAD Dataset\n(HuggingFace)" {
+  label.near: bottom-center
+}
+
+pdfs: "Input PDFs" {
+  shape: cylinder
+  label.near: bottom-center
+}
+
+user -> frontend: "upload PDFs\nreview & edit"
+frontend -> backend: "HTTP API\n(port 8000)"
+backend -> chroma: "embed & query"
+backend -> ollama: "GPU inference\n(auto-detect)"
+backend -> cpu_backend: "CPU fallback"
+backend -> jaeger: "OTLP gRPC\n(port 4317)"
+backend -> cuad: "benchmark\nclauses + PDFs"
+pdfs -> backend: "OCR pipeline"

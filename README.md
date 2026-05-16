@@ -56,6 +56,7 @@ The backend auto-detects Ollama on your host. If found, uses GPU. If not, falls 
 | **Frontend (Streamlit)** | http://localhost:5070 |
 | **API Docs (Scalar)** | http://localhost:8080/docs |
 | **API Health** | http://localhost:8080/health |
+| **Jaeger Tracing UI** | http://localhost:16686 |
 
 ---
 
@@ -153,17 +154,37 @@ open http://localhost:8080/docs
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────┐     ┌───────────────────┐
-│  Streamlit  │────▶│   FastAPI    │────▶│  Ollama (GPU)     │
-│  (Port 5070)│     │  (Port 8080) │     │  or               │
-└─────────────┘     └──────┬───────┘     │  llama-cpp (CPU)  │
-                           │             └───────────────────┘
-                     ┌─────▼──────┐
-                     │  PaddleOCR │
-                     │  (v3.5.0)  │
-                     └────────────┘
-```
+### System Context
+
+![System context](architecture-docs/diagrams/out/01-context.png)
+
+The system consists of a Streamlit frontend, a FastAPI backend, and Jaeger for distributed tracing. LLM inference runs either on GPU via host Ollama or CPU via llama-cpp-python (auto-detected). Documents are stored in ChromaDB for semantic retrieval.
+
+See [System Overview](architecture-docs/01-overview.md) for the full request lifecycle, three wire contracts, and known issues.
+
+### Module Architecture
+
+![Module components](architecture-docs/diagrams/out/02-components.png)
+
+The backend is organized into 6 layers: OCR, extraction, retrieval, draft generation, feedback loop, and evaluation. Each layer is independently tested and replaceable.
+
+See [Integration](architecture-docs/02-integration.md) for API contracts, data flow diagrams, and the per-field reliability table.
+
+### Request Lifecycle
+
+![Request sequence](architecture-docs/diagrams/out/03-sequence.png)
+
+A full document processing run follows 20 steps from upload through to draft generation, with the feedback loop improving future extractions.
+
+See [Frontend Flow](architecture-docs/03-frontend-flow.md) for SSE stream processing, session state management, and UI tab details.
+
+### Deployment Topology
+
+![Deployment](architecture-docs/diagrams/out/05-deployment.png)
+
+All three services run in Docker containers. The host runs Ollama for GPU inference. Jaeger receives traces via OTLP gRPC.
+
+See [Deployment](architecture-docs/04-deployment.md) for the environment matrix, volume mounts, and Dockerfile details.
 
 ### Tech Stack
 
@@ -178,20 +199,36 @@ open http://localhost:8080/docs
 | **Frontend** | Streamlit | Simple file upload + results display |
 | **Database** | SQLite | Zero setup, file-based |
 | **Vector Store** | ChromaDB | Embedded, in-process |
+| **Tracing** | Jaeger + OpenTelemetry | Distributed tracing via OTLP gRPC |
 | **Package mgr** | uv | 10x faster pip resolution |
+
+### Benchmark Results
+
+| Benchmark | Score | Notes |
+|-----------|-------|-------|
+| **OCR Accuracy** | 2.41% CER | Character Error Rate on CUAD PDFs |
+| **Extraction Quality** | 81% | Grounding rate x (1 - hallucination rate) |
+| **Classifier** | 22% | Keyword classifier on standalone clauses (no document header) |
 
 ---
 
 ## Project Structure
 
 ```
-├── docker-compose.yml
+├── docker-compose.yml           # 3 services: backend, frontend, jaeger
+├── .env.example                 # All env vars with documentation
+├── architecture-docs/           # Full architecture documentation + D2 diagrams
+│   ├── 01-overview.md
+│   ├── 02-integration.md
+│   ├── 03-frontend-flow.md
+│   ├── 04-deployment.md
+│   └── diagrams/                # D2 source + rendered SVG/PNG
 ├── backend/
 │   ├── Dockerfile
 │   ├── pyproject.toml           # All deps pinned to exact versions
 │   ├── entrypoint.sh            # Starts server, model handled by Ollama
 │   └── app/
-│       ├── main.py              # FastAPI app + 6 API routes
+│       ├── main.py              # FastAPI app + 10 API routes
 │       ├── config.py            # Environment config
 │       ├── models.py            # Pydantic schemas per doc type
 │       ├── ocr/                 # PaddleOCR engine + document classifier
@@ -199,13 +236,15 @@ open http://localhost:8080/docs
 │       ├── retrieval/           # ChromaDB vector store
 │       ├── draft/               # Draft generation with citations
 │       ├── feedback/            # Operator edit capture + reinforcement
-│       ├── evaluation/          # LLM-as-judge evaluation harness
-│       └── telemetry/           # OpenTelemetry tracing
+│       ├── evaluation/          # LLM-as-judge + 3 benchmark modes
+│       └── telemetry/           # OpenTelemetry tracing for Jaeger
 ├── frontend/
 │   ├── Dockerfile
 │   ├── app.py                   # Streamlit UI (upload, edit, draft, eval)
 │   └── requirements.txt
-└── sample_docs/                 # Test PDFs
+├── datasets/                    # CUAD evaluation data (downloaded on demand)
+├── sample_docs/                 # Test PDFs
+└── paddlex_cache/               # PaddleOCR model cache (auto-generated, gitignored)
 ```
 
 ---

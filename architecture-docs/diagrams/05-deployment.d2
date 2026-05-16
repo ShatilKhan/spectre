@@ -1,0 +1,41 @@
+direction: right
+
+host: "Host Machine" {
+  docker: "Docker Engine" {
+    label.near: bottom-center
+
+    backend: "spectre-backend\nFastAPI + Uvicorn\nport 8080" {
+      icon: https://cdn.simpleicons.org/docker/2496ED
+      label.near: bottom-center
+    }
+
+    frontend: "spectre-frontend\nStreamlit\nport 5070" {
+      icon: https://cdn.simpleicons.org/streamlit/FF4B4B
+      label.near: bottom-center
+    }
+
+    jaeger: "spectre-jaeger\nJaeger All-in-One\nports 16686, 4317" {
+      icon: https://cdn.simpleicons.org/jaeger/00BFFF
+      label.near: bottom-center
+    }
+
+    volumes: "Docker Volumes" {
+      models: "/models\n(GGUF files)"
+      data: "/data\n(SQLite + ChromaDB)"
+      paddlex: "/paddlex_cache\n(PaddleOCR models)"
+      sample_docs: "/sample_docs\n(PDF documents)"
+      datasets: "/datasets\n(CUAD benchmark)"
+    }
+  }
+
+  ollama_host: "Host OS\nOllama\nport 11434" {
+    icon: https://cdn.simpleicons.org/ollama/000000
+    label.near: bottom-center
+  }
+}
+
+backend -> frontend: "HTTP\nport 8501"
+frontend -> backend: "HTTP\nport 8000"
+backend -> ollama_host: "GPU inference\nhost.docker.internal:11434"
+backend -> jaeger: "OTLP gRPC\nport 4317"
+backend -> volumes: "reads/writes"
