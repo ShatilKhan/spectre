@@ -158,9 +158,19 @@ if active_tab == "📄 Extraction":
         if ext:
             st.subheader("🧠 Extracted Fields")
             for key, value in ext.items():
-                if value:
-                    display = json.dumps(value, indent=2) if not isinstance(value, str) else value
-                    st.text(f"{key}: {display[:300]}")
+                if not value:
+                    continue
+                label = key.replace("_", " ").title()
+                if isinstance(value, dict):
+                    # Nestable fields section
+                    with st.expander(f"**{label}**", expanded=True):
+                        for k2, v2 in value.items():
+                            if v2:
+                                st.markdown(f"**{k2.replace('_', ' ').title()}:** {v2}")
+                elif isinstance(value, list):
+                    st.markdown(f"**{label}:** {', '.join(str(v) for v in value if v) or 'N/A'}")
+                else:
+                    st.markdown(f"**{label}:** {value}")
     else:
         st.info("Upload a PDF using the sidebar and click **🚀 Extract** to begin.")
 
@@ -175,10 +185,19 @@ elif active_tab == "✏️ Review & Edit":
         for key, value in ext.items():
             if not value:
                 continue
+            label = key.replace("_", " ").title()
             current_val = st.session_state.edited_fields.get(key, value)
-            if isinstance(value, list):
+
+            if isinstance(value, dict):
+                st.markdown(f"**{label}**")
+                edited[key] = {}
+                for k2, v2 in value.items():
+                    label2 = k2.replace("_", " ").title()
+                    cv = current_val.get(k2, v2) if isinstance(current_val, dict) else v2
+                    edited[key][k2] = st.text_input(label2, value=str(cv), key=f"edit_{key}_{k2}")
+            elif isinstance(value, list):
                 new_val = st.text_area(
-                    key, value=json.dumps(current_val, indent=2) if isinstance(current_val, list) else str(current_val),
+                    label, value=json.dumps(current_val, indent=2) if isinstance(current_val, list) else str(current_val),
                     key=f"edit_{key}", height=80,
                 )
                 try:
@@ -186,9 +205,9 @@ elif active_tab == "✏️ Review & Edit":
                 except json.JSONDecodeError:
                     edited[key] = new_val
             elif isinstance(value, (int, float)):
-                edited[key] = st.number_input(key, value=current_val, key=f"edit_{key}")
+                edited[key] = st.number_input(label, value=current_val, key=f"edit_{key}")
             else:
-                edited[key] = st.text_input(key, value=str(current_val), key=f"edit_{key}")
+                edited[key] = st.text_input(label, value=str(current_val), key=f"edit_{key}")
 
         st.session_state.edited_fields = edited
 

@@ -12,6 +12,7 @@ from app.extraction.llm_extractor import extract_fields
 from app.ocr.pipeline import process_document
 from app.retrieval.chroma_store import retrieve_for_draft
 from app.draft.generator import generate_draft, generate_draft_stream
+from app.feedback.edit_capture import store_correction
 
 
 @asynccontextmanager
@@ -410,10 +411,17 @@ async def generate_draft_stream_endpoint(payload: dict):
     description="Accepts corrections from the operator review sheet. (Stub — full implementation pending.)",
 )
 async def submit_feedback(payload: dict):
-    """Accept operator corrections. Stub — logs and acknowledges."""
-    changed = payload.get("changed_fields", [])
-    print(f"Feedback received: {len(changed)} fields corrected: {changed}")
-    return {"status": "accepted", "corrections_count": len(changed)}
+    """Accept operator corrections and store for reinforcement learning."""
+    pair = store_correction(
+        original=payload.get("original", {}),
+        corrected=payload.get("corrected", {}),
+        document_type=payload.get("document_type", "unknown"),
+    )
+    return {
+        "status": "accepted",
+        "corrections_count": len(pair.changed_fields),
+        "changed_fields": pair.changed_fields,
+    }
 
 
 # ─── Evaluate (stub) ────────────────────────────────────

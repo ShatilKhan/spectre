@@ -36,13 +36,13 @@ def truncate_text(text: str, max_words: int = MAX_INPUT_TOKENS) -> str:
 
 BASE_SYSTEM_PROMPT = """You are a legal document extraction assistant. Extract structured information from the provided legal document text.
 
-Rules:
-1. Return only valid JSON matching the requested schema.
-2. If a field cannot be determined from the text, use null.
-3. Do not invent or fabricate information not present in the text.
-4. For date fields, use ISO 8601 format (YYYY-MM-DD) when possible.
-5. For list fields, include all items mentioned in the text.
-6. Extract text verbatim where possible rather than paraphrasing.
+CRITICAL RULES — YOU WILL BE PENALIZED IF YOU VIOLATE THESE:
+1. NEVER invent or fabricate information. If a field's value is not explicitly stated in the text, use null.
+2. NEVER guess amounts, dates, names, or numbers. Only extract values you can see in the text.
+3. If the OCR text is garbled, incomplete, or has no relevant content for a field, return null.
+4. Return only valid JSON matching the requested schema.
+5. For date fields, use ISO 8601 format (YYYY-MM-DD) when possible.
+6. For list fields, include only items explicitly mentioned.
 
 Document type: {doc_type}
 """
@@ -138,6 +138,58 @@ def extract_fields(
     if not content:
         return {"error": "Empty response from LLM"}
     try:
-        return json.loads(content)
+        result = json.loads(content)
+        return _sanitize_extraction(result, raw_text)
     except json.JSONDecodeError:
         return {"error": "Failed to parse LLM output", "raw_snippet": content[:500]}
+
+
+def _sanitize_extraction(result: dict, raw_text: str) -> dict:
+    """Post-process extraction to remove hallucinated values.
+
+    If a string value looks like a specific data point (amount, date, etc.)
+    but doesn't appear in the OCR text, null it out.
+    """
+    text_lower = raw_text.lower()
+    for key, value in list(result.items()):
+        if not value:
+            continue
+        if isinstance(value, str) and _looks_fabricated(value, text_lower):
+            result[key] = None
+        elif isinstance(value, dict):
+            for k2, v2 in list(value.items()):
+                if isinstance(v2, str) and _looks_fabricated(v2, text_lower):
+                    value[k2] = None
+    return result
+
+
+def _looks_fabricated(value: str, text_lower: str) -> bool:
+    """Check if a value looks fabricated vs grounded in source text.
+
+    Returns True if the value seems to be a hallucination.
+    """
+    if not value or len(value) < 3:
+        return False
+    val_lower = value.lower().strip()
+    # Check if value appears directly in text
+    if val_lower in text_lower:
+        return False
+    # Check for dollar amounts
+    import re
+    dollar_matches = re.findall(r'\$[\d,]+(?:\.\d{2})?', value)
+    if dollar_matches:
+        for dm in dollar_matches:
+            if dm.lower() not in text_lower:
+                return True
+    # Check for dates (like "January 15, 2024" or "2024-01-15")
+    date_patterns = [
+        r'\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\b',
+        r'\b\d{4}-\d{2}-\d{2}\b',
+        r'\b\d{1,2}/\d{1,2}/\d{4}\b',
+    ]
+    for pat in date_patterns:
+        date_matches = re.findall(pat, value, re.I)
+        for dm in date_matches:
+            if dm.lower() not in text_lower:
+                return True
+    return False
